@@ -16,7 +16,8 @@ const int N_ITERS = 1000;
 
 // Message sizes to benchmark (in bytes)
 const int MSG_SIZES[] = {1,    4,     16,    64,     256,    1024,
-                         4096, 16384, 65536, 262144, 1048576};
+                         4096, 16384, 65536, 262144, 1048576, 4194304,
+                          16777216, 33554432, 67108864, 134217728};
 
 // Send modes to benchmark
 typedef int (*mpi_send_fn)(const void*, int, MPI_Datatype, int, int, MPI_Comm);
