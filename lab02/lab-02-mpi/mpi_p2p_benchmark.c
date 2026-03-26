@@ -12,12 +12,14 @@
 #include <stdlib.h>
 
 // Number of round-trip iterations for the benchmark
-const int N_ITERS = 1000;
+const int N_ITERS = 1001;
 
 // Message sizes to benchmark (in bytes)
-const int MSG_SIZES[] = {1,    4,     16,    64,     256,    1024,
-                         4096, 16384, 65536, 262144, 1048576, 4194304,
-                          16777216, 33554432, 67108864, 134217728};
+const int MSG_SIZES[] = {1,        2,       4,       8,       16,      32,
+                         64,       128,     256,     512,     1024,    2048,
+                         4096,     8192,    16384,   32768,   65536,   131072,
+                         262144,   524288,  1048576, 2097152, 4194304, 8388608,
+                         16777216, 33554432};
 
 // Send modes to benchmark
 typedef int (*mpi_send_fn)(const void*, int, MPI_Datatype, int, int, MPI_Comm);
@@ -46,19 +48,19 @@ int main(int argc, char* argv[]) {
   char hostname[MPI_MAX_PROCESSOR_NAME];
   int name_len;
   MPI_Get_processor_name(hostname, &name_len);
-  switch (my_rank) {
-    case SENDER:
-      printf("Process %d (sender) is running on %s\n", my_rank, hostname);
-      break;
-    case RECEIVER:
-      printf("Process %d (receiver) is running on %s\n", my_rank, hostname);
-      break;
-  }
+  // switch (my_rank) {
+  //   case SENDER:
+  //     printf("Process %d (sender) is running on %s\n", my_rank, hostname);
+  //     break;
+  //   case RECEIVER:
+  //     printf("Process %d (receiver) is running on %s\n", my_rank, hostname);
+  //     break;
+  // }
 
   // Print benchmark header
   if (my_rank == SENDER) {
     printf(
-        "\nSend Mode\tMessage Size [Bytes]\tThroughput [Mbit/s]\tLatency "
+        "Send Mode\tMessage Size [Bytes]\tThroughput [Mbit/s]\tLatency "
         "[ms]\n");
   }
 
@@ -74,6 +76,7 @@ int main(int argc, char* argv[]) {
       // Synchronize all processes before starting the clock
       MPI_Barrier(MPI_COMM_WORLD);
       double start_time = MPI_Wtime();
+      MPI_Barrier(MPI_COMM_WORLD);
 
       for (int iter = 0; iter < N_ITERS; iter++) {
         switch (my_rank) {
