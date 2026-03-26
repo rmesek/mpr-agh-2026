@@ -34,13 +34,20 @@ int main(int argc, char* argv[]) {
   int my_rank;
   MPI_Comm_rank(MPI_COMM_WORLD, &my_rank);
 
-  if (argc != 2) {
+  if (argc < 2) {
     if (my_rank == 0) {
-      fprintf(stderr, "Usage: %s <n_points_per_process>\n", argv[0]);
+      fprintf(stderr, "Usage: %s <n_points_per_process> [--no-header]\n",
+              argv[0]);
       fprintf(stderr, "Example: %s 1e6\n", argv[0]);
     }
     MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE);
   }
+
+  bool print_header = true;
+  for (int i = 2; i < argc; i++) {
+    if (strcmp(argv[i], "--no-header") == 0) print_header = false;
+  }
+
   uint64_t n_points_per_process = (uint64_t)strtod(argv[1], NULL);
 
   // Initialize random seed differently for each process
@@ -61,10 +68,11 @@ int main(int argc, char* argv[]) {
   if (my_rank == 0) {
     double pi_estimate = 4.0 * global_count / (n_points_per_process * size);
     double time_ms = (end_time - start_time) * 1e3;
-    printf(
-        "Processes\tPoints per Process\tEstimated PI\tTime [ms]\n"
-        "%d\t\t%.1e\t\t%.6f\t\t%.2f\n",
-        size, (double)n_points_per_process, pi_estimate, time_ms);
+    if (print_header) {
+      printf("Processes\tPoints per Process\tEstimated PI\tTime [ms]\n");
+    }
+    printf("%d\t\t%.1e\t\t%.6f\t\t%.2f\n", size, (double)n_points_per_process,
+           pi_estimate, time_ms);
   }
 
   MPI_Finalize();
