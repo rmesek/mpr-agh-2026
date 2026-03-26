@@ -71,7 +71,7 @@ int main(int argc, char* argv[]) {
     if (print_header) {
       printf("Processes\tPoints per Process\tEstimated PI\tTime [ms]\n");
     }
-    printf("%d\t\t%.1e\t\t%.6f\t\t%.2f\n", size, (double)n_points_per_process,
+    printf("%d\t%.1e\t%.6f\t%.2f\n", size, (double)n_points_per_process,
            pi_estimate, time_ms);
   }
 
