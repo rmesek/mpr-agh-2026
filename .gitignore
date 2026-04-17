@@ -1,2 +1,3 @@
 .vscode/
+.DS_Store
 lab04/lab-04-mpi/target/
