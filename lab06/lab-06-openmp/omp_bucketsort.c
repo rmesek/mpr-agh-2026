@@ -2,6 +2,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 // algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs"
 // the state must be initialized to non-zero
@@ -67,8 +68,8 @@ void bucket_free(bucket_t* b) {
   b->size = 0;
 }
 
-void buckets_insert(bucket_t* buckets, size_t num_buckets, uint32_t bucket_range,
-                   uint32_t value) {
+void buckets_insert(bucket_t* buckets, size_t num_buckets,
+                    uint32_t bucket_range, uint32_t value) {
   size_t bucket_index = value / bucket_range;
   if (bucket_index >= num_buckets) {
     bucket_index = num_buckets - 1;
@@ -94,10 +95,90 @@ int compare_uint32(const void* a, const void* b) {
 void buckets_sort(bucket_t* buckets, size_t num_buckets) {
   for (size_t i = 0; i < num_buckets; i++) {
     if (buckets[i].size > 1) {
-      qsort(buckets[i].elements, buckets[i].size, sizeof(uint32_t), compare_uint32);
+      qsort(buckets[i].elements, buckets[i].size, sizeof(uint32_t),
+            compare_uint32);
     }
   }
 }
+
+// BUCKETSORT IMPLEMENTATIONS
+
+void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
+  uint32_t bucket_range = UINT32_MAX / num_buckets;
+  int num_threads = omp_get_max_threads();
+
+  // local buckets for each thread
+  bucket_t* local_buckets =
+      malloc(num_threads * num_buckets * sizeof(bucket_t));
+
+  // offset in the input array for each bucket
+  size_t* bucket_offsets = calloc(num_buckets + 1, sizeof(size_t));
+
+#pragma omp parallel
+  {
+    int thread_id = omp_get_thread_num();
+    bucket_t* local_bucket = &local_buckets[thread_id * num_buckets];
+
+    // initialize local buckets
+    for (size_t b_idx = 0; b_idx < num_buckets; b_idx++) {
+      bucket_init(&local_bucket[b_idx],
+                  array_size / num_buckets / num_threads + 10);
+    }
+
+#pragma omp for schedule(auto)
+    // insert elements into local buckets
+    for (size_t i = 0; i < array_size; i++) {
+      buckets_insert(local_bucket, num_buckets, bucket_range, array[i]);
+    }
+
+#pragma omp for schedule(auto)
+    // sum up sizes of local buckets to get global bucket offsets
+    for (size_t b_idx = 0; b_idx < num_buckets; b_idx++) {
+      for (int t_id = 0; t_id < num_threads; t_id++) {
+        bucket_t* b = &local_buckets[t_id * num_buckets + b_idx];
+        bucket_offsets[b_idx + 1] += b->size;
+      }
+    }
+
+#pragma omp single
+    {
+      // prefix sum to get offsets
+      for (size_t b_idx = 1; b_idx <= num_buckets; b_idx++) {
+        bucket_offsets[b_idx] += bucket_offsets[b_idx - 1];
+      }
+    }
+
+#pragma omp for schedule(auto)
+    // merge local buckets into global buckets (store in the input array)
+    for (size_t b_idx = 0; b_idx < num_buckets; b_idx++) {
+      size_t write_pos = bucket_offsets[b_idx];
+      for (int t_id = 0; t_id < num_threads; t_id++) {
+        bucket_t* b = &local_buckets[t_id * num_buckets + b_idx];
+        if (b->size > 0) {
+          memcpy(&array[write_pos], b->elements, b->size * sizeof(uint32_t));
+          write_pos += b->size;
+        }
+      }
+    }
+#pragma omp for schedule(auto)
+    // sort global buckets stored in the input array
+    for (size_t b_idx = 0; b_idx < num_buckets; b_idx++) {
+      qsort(&array[bucket_offsets[b_idx]],
+            bucket_offsets[b_idx + 1] - bucket_offsets[b_idx], sizeof(uint32_t),
+            compare_uint32);
+    }
+
+    // cleanup
+    for (size_t b_idx = 0; b_idx < num_buckets; b_idx++) {
+      bucket_free(&local_bucket[b_idx]);
+    }
+  }  // end of #pragma omp parallel
+
+  free(local_buckets);
+  free(bucket_offsets);
+}
+
+// END OF BUCKETSORT IMPLEMENTATIONS
 
 int main(int argc, char** argv) {
   uint32_t base_seed;
@@ -123,6 +204,8 @@ int main(int argc, char** argv) {
     return EXIT_FAILURE;
   }
 
+  // BUCKETSORT V3
+
   // generate random numbers in parallel using OpenMP
   double start_time;
   start_time = omp_get_wtime();
@@ -130,38 +213,25 @@ int main(int argc, char** argv) {
   double omp_auto_xorshift32_time_ms = (omp_get_wtime() - start_time) * 1e3;
   printf("omp_auto_xorshift32\t%f ms\n", omp_auto_xorshift32_time_ms);
 
-  // print_array(array, array_size);
+  // sort using bucketsort
+  start_time = omp_get_wtime();
+  bucketsort_v3(array, array_size, num_buckets);
+  double bucketsort_v3_time_ms = (omp_get_wtime() - start_time) * 1e3;
+  printf("bucketsort_v3\t%f ms\n", bucketsort_v3_time_ms);
 
-  // preallocate buckets as vectors
-  uint32_t bucket_range = UINT32_MAX / num_buckets;
-  bucket_t* buckets = malloc(num_buckets * sizeof(bucket_t));
-  if (buckets == NULL) {
-    fprintf(stderr, "Failed to allocate memory for buckets\n");
-    return EXIT_FAILURE;
+  // validate sorting result
+  for (size_t i = 1; i < array_size; i++) {
+    if (array[i - 1] > array[i]) {
+      fprintf(stderr, "Error: array is not sorted at index %zu\n", i);
+      free(array);
+      return EXIT_FAILURE;
+    }
   }
-  for (size_t i = 0; i < num_buckets; i++) {
-    bucket_init(&buckets[i], array_size / num_buckets + 10);
-  }
 
-  // insert some test values into buckets
-  buckets_insert(buckets, num_buckets, bucket_range, UINT32_MAX);
-  buckets_insert(buckets, num_buckets, bucket_range, bucket_range);
-  buckets_insert(buckets, num_buckets, bucket_range, bucket_range - 1);
-  buckets_insert(buckets, num_buckets, bucket_range, 0);
-  printf("\nBuckets after inserting test values:\n");
-  print_buckets(buckets, num_buckets);
-
-  // sort buckets
-  buckets_sort(buckets, num_buckets);
-  printf("\nBuckets after sorting:\n");
-  print_buckets(buckets, num_buckets);
+  // END OF BUCKETSORT V3
 
   // cleanup
   free(array);
-  for (size_t i = 0; i < num_buckets; i++) {
-    bucket_free(&buckets[i]);
-  }
-  free(buckets);
 
   return EXIT_SUCCESS;
 }
