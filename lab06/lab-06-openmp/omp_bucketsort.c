@@ -1,8 +1,13 @@
+#include <math.h>
 #include <omp.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+#ifndef PRINT_DEBUG
+#define PRINT_DEBUG 1
+#endif
 
 // algorithm "xor" from p. 4 of Marsaglia, "Xorshift RNGs"
 // the state must be initialized to non-zero
@@ -84,6 +89,59 @@ void print_buckets(const bucket_t* buckets, size_t num_buckets) {
   }
 }
 
+void print_buckets_stats(const bucket_t* buckets, size_t num_buckets) {
+  if (num_buckets == 0) return;
+
+  size_t min_cap = buckets[0].capacity;
+  size_t max_cap = buckets[0].capacity;
+  double sum_cap = 0;
+
+  size_t min_size = buckets[0].size;
+  size_t max_size = buckets[0].size;
+  double sum_size = 0;
+
+  for (size_t i = 0; i < num_buckets; i++) {
+    size_t cap = buckets[i].capacity;
+    size_t sz = buckets[i].size;
+
+    if (cap < min_cap) min_cap = cap;
+    if (cap > max_cap) max_cap = cap;
+    sum_cap += cap;
+
+    if (sz < min_size) min_size = sz;
+    if (sz > max_size) max_size = sz;
+    sum_size += sz;
+  }
+
+  double avg_cap = sum_cap / num_buckets;
+  double avg_size = sum_size / num_buckets;
+
+  double var_cap = 0;
+  double var_size = 0;
+
+  for (size_t i = 0; i < num_buckets; i++) {
+    double diff_cap = buckets[i].capacity - avg_cap;
+    double diff_size = buckets[i].size - avg_size;
+    var_cap += diff_cap * diff_cap;
+    var_size += diff_size * diff_size;
+  }
+
+  double stddev_cap = sqrt(var_cap / num_buckets);
+  double stddev_size = sqrt(var_size / num_buckets);
+
+  printf("  Num Buckets: %zu\n", num_buckets);
+
+  printf("  Min Cap.:    %zu\n", min_cap);
+  printf("  Max Cap.:    %zu\n", max_cap);
+  printf("  Avg Cap.:    %.2f\n", avg_cap);
+  printf("  StdDev Cap.: %.2f\n", stddev_cap);
+
+  printf("  Min Elem.:    %zu\n", min_size);
+  printf("  Max Elem.:    %zu\n", max_size);
+  printf("  Avg Elem.:    %.2f\n", avg_size);
+  printf("  StdDev Elem.: %.2f\n", stddev_size);
+}
+
 int compare_uint32(const void* a, const void* b) {
   uint32_t arg1 = *(const uint32_t*)a;
   uint32_t arg2 = *(const uint32_t*)b;
@@ -114,6 +172,10 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
   // offset in the input array for each bucket
   size_t* bucket_offsets = calloc(num_buckets + 1, sizeof(size_t));
 
+#if PRINT_DEBUG
+  double phase_time;
+#endif
+
 #pragma omp parallel
   {
     int thread_id = omp_get_thread_num();
@@ -125,11 +187,26 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
                   array_size / num_buckets / num_threads + 10);
     }
 
+#pragma omp barrier
+#if PRINT_DEBUG
+#pragma omp single
+    phase_time = omp_get_wtime();
+#endif
+
 #pragma omp for schedule(auto)
     // insert elements into local buckets
     for (size_t i = 0; i < array_size; i++) {
       buckets_insert(local_bucket, num_buckets, bucket_range, array[i]);
     }
+
+#if PRINT_DEBUG
+#pragma omp single
+    {
+      printf("bucketsort_v3.distribution\t%f ms\n",
+             (omp_get_wtime() - phase_time) * 1e3);
+      phase_time = omp_get_wtime();
+    }
+#endif
 
 #pragma omp for schedule(auto)
     // sum up sizes of local buckets to get global bucket offsets
@@ -160,6 +237,16 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
         }
       }
     }
+
+#if PRINT_DEBUG
+#pragma omp single
+    {
+      printf("bucketsort_v3.copy_and_merge\t%f ms\n",
+             (omp_get_wtime() - phase_time) * 1e3);
+      phase_time = omp_get_wtime();
+    }
+#endif
+
 #pragma omp for schedule(auto)
     // sort global buckets stored in the input array
     for (size_t b_idx = 0; b_idx < num_buckets; b_idx++) {
@@ -167,6 +254,25 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
             bucket_offsets[b_idx + 1] - bucket_offsets[b_idx], sizeof(uint32_t),
             compare_uint32);
     }
+
+#if PRINT_DEBUG
+#pragma omp single
+    {
+      printf("bucketsort_v3.sort\t%f ms\n",
+             (omp_get_wtime() - phase_time) * 1e3);
+    }
+#endif
+
+#if PRINT_DEBUG
+#pragma omp single
+    {
+      // print local bucket stats for debugging
+      for (int t_id = 0; t_id < num_threads; t_id++) {
+        printf("Thread %d local buckets\n", t_id);
+        print_buckets_stats(&local_buckets[t_id * num_buckets], num_buckets);
+      }
+    }
+#endif
 
     // cleanup
     for (size_t b_idx = 0; b_idx < num_buckets; b_idx++) {
