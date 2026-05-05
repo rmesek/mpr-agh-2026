@@ -4,7 +4,7 @@ DIR_NAME = "scripts"
 
 PARAMS = {
     "seed": "$SLURM_ARRAY_TASK_ID",
-    "max_threads": list(range(1, 17)),
+    "max_threads": list(range(1, 33)),
     "array_size": [1_000, 300_000, 100_000_000],
     "num_buckets": [100, 10_000, 1_000_000],
 }
