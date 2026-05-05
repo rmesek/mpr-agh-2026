@@ -89,57 +89,34 @@ void print_buckets(const bucket_t* buckets, size_t num_buckets) {
   }
 }
 
-void print_buckets_stats(const bucket_t* buckets, size_t num_buckets) {
+void print_bucket_stats_v3(const size_t* bucket_offsets, size_t num_buckets) {
   if (num_buckets == 0) return;
 
-  size_t min_cap = buckets[0].capacity;
-  size_t max_cap = buckets[0].capacity;
-  double sum_cap = 0;
-
-  size_t min_size = buckets[0].size;
-  size_t max_size = buckets[0].size;
+  size_t min_size = bucket_offsets[1] - bucket_offsets[0];
+  size_t max_size = min_size;
   double sum_size = 0;
 
   for (size_t i = 0; i < num_buckets; i++) {
-    size_t cap = buckets[i].capacity;
-    size_t sz = buckets[i].size;
-
-    if (cap < min_cap) min_cap = cap;
-    if (cap > max_cap) max_cap = cap;
-    sum_cap += cap;
-
+    size_t sz = bucket_offsets[i + 1] - bucket_offsets[i];
     if (sz < min_size) min_size = sz;
     if (sz > max_size) max_size = sz;
     sum_size += sz;
   }
 
-  double avg_cap = sum_cap / num_buckets;
   double avg_size = sum_size / num_buckets;
-
-  double var_cap = 0;
   double var_size = 0;
 
   for (size_t i = 0; i < num_buckets; i++) {
-    double diff_cap = buckets[i].capacity - avg_cap;
-    double diff_size = buckets[i].size - avg_size;
-    var_cap += diff_cap * diff_cap;
+    double diff_size = (bucket_offsets[i + 1] - bucket_offsets[i]) - avg_size;
     var_size += diff_size * diff_size;
   }
 
-  double stddev_cap = sqrt(var_cap / num_buckets);
   double stddev_size = sqrt(var_size / num_buckets);
 
-  printf("  Num Buckets: %zu\n", num_buckets);
-
-  printf("  Min Cap.:    %zu\n", min_cap);
-  printf("  Max Cap.:    %zu\n", max_cap);
-  printf("  Avg Cap.:    %.2f\n", avg_cap);
-  printf("  StdDev Cap.: %.2f\n", stddev_cap);
-
-  printf("  Min Elem.:    %zu\n", min_size);
-  printf("  Max Elem.:    %zu\n", max_size);
-  printf("  Avg Elem.:    %.2f\n", avg_size);
-  printf("  StdDev Elem.: %.2f\n", stddev_size);
+  printf("bucketsort_v3.min_elem       %zu\n", min_size);
+  printf("bucketsort_v3.max_elem       %zu\n", max_size);
+  printf("bucketsort_v3.avg_elem       %.2f\n", avg_size);
+  printf("bucketsort_v3.stddev_elem    %.2f\n", stddev_size);
 }
 
 int compare_uint32(const void* a, const void* b) {
@@ -202,7 +179,7 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
 #if PRINT_DEBUG
 #pragma omp single
     {
-      printf("bucketsort_v3.distribution\t%f ms\n",
+      printf("bucketsort_v3.distribution   %f ms\n",
              (omp_get_wtime() - phase_time) * 1e3);
       phase_time = omp_get_wtime();
     }
@@ -241,7 +218,7 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
 #if PRINT_DEBUG
 #pragma omp single
     {
-      printf("bucketsort_v3.copy_and_merge\t%f ms\n",
+      printf("bucketsort_v3.copy_and_merge %f ms\n",
              (omp_get_wtime() - phase_time) * 1e3);
       phase_time = omp_get_wtime();
     }
@@ -258,19 +235,27 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
 #if PRINT_DEBUG
 #pragma omp single
     {
-      printf("bucketsort_v3.sort\t%f ms\n",
+      printf("bucketsort_v3.sort           %f ms\n",
              (omp_get_wtime() - phase_time) * 1e3);
     }
 #endif
 
+    // #if PRINT_DEBUG
+    // #pragma omp single
+    //     {
+    //       // print local bucket stats for debugging
+    //       for (int t_id = 0; t_id < num_threads; t_id++) {
+    //         printf("Thread %d local buckets\n", t_id);
+    //         print_buckets_stats(&local_buckets[t_id * num_buckets],
+    //         num_buckets);
+    //       }
+    //     }
+    // #endif
+
 #if PRINT_DEBUG
 #pragma omp single
     {
-      // print local bucket stats for debugging
-      for (int t_id = 0; t_id < num_threads; t_id++) {
-        printf("Thread %d local buckets\n", t_id);
-        print_buckets_stats(&local_buckets[t_id * num_buckets], num_buckets);
-      }
+      print_bucket_stats_v3(bucket_offsets, num_buckets);
     }
 #endif
 
@@ -317,13 +302,13 @@ int main(int argc, char** argv) {
   start_time = omp_get_wtime();
   omp_auto_xorshift32(base_seed, array, array_size);
   double omp_auto_xorshift32_time_ms = (omp_get_wtime() - start_time) * 1e3;
-  printf("omp_auto_xorshift32\t%f ms\n", omp_auto_xorshift32_time_ms);
+  printf("omp_auto_xorshift32          %f ms\n", omp_auto_xorshift32_time_ms);
 
   // sort using bucketsort
   start_time = omp_get_wtime();
   bucketsort_v3(array, array_size, num_buckets);
   double bucketsort_v3_time_ms = (omp_get_wtime() - start_time) * 1e3;
-  printf("bucketsort_v3\t%f ms\n", bucketsort_v3_time_ms);
+  printf("bucketsort_v3                %f ms\n", bucketsort_v3_time_ms);
 
   // validate sorting result
   for (size_t i = 1; i < array_size; i++) {
