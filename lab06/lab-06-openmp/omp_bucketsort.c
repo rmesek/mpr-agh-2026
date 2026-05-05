@@ -158,6 +158,12 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
     int thread_id = omp_get_thread_num();
     bucket_t* local_bucket = &local_buckets[thread_id * num_buckets];
 
+#pragma omp barrier
+#if PRINT_DEBUG
+#pragma omp single
+    phase_time = omp_get_wtime();
+#endif
+
     // initialize local buckets
     for (size_t b_idx = 0; b_idx < num_buckets; b_idx++) {
       bucket_init(&local_bucket[b_idx],
@@ -167,7 +173,11 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
 #pragma omp barrier
 #if PRINT_DEBUG
 #pragma omp single
-    phase_time = omp_get_wtime();
+    {
+      printf("bucketsort_v3.init           %f ms\n",
+             (omp_get_wtime() - phase_time) * 1e3);
+      phase_time = omp_get_wtime();
+    }
 #endif
 
 #pragma omp for schedule(auto)
@@ -201,6 +211,15 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
         bucket_offsets[b_idx] += bucket_offsets[b_idx - 1];
       }
     }
+
+#if PRINT_DEBUG
+#pragma omp single
+    {
+      printf("bucketsort_v3.calc_offsets   %f ms\n",
+             (omp_get_wtime() - phase_time) * 1e3);
+      phase_time = omp_get_wtime();
+    }
+#endif
 
 #pragma omp for schedule(auto)
     // merge local buckets into global buckets (store in the input array)
@@ -237,6 +256,7 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
     {
       printf("bucketsort_v3.sort           %f ms\n",
              (omp_get_wtime() - phase_time) * 1e3);
+      phase_time = omp_get_wtime();
     }
 #endif
 
@@ -251,6 +271,15 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
     for (size_t b_idx = 0; b_idx < num_buckets; b_idx++) {
       bucket_free(&local_bucket[b_idx]);
     }
+
+#pragma omp barrier
+#if PRINT_DEBUG
+#pragma omp single
+    {
+      printf("bucketsort_v3.cleanup        %f ms\n",
+             (omp_get_wtime() - phase_time) * 1e3);
+    }
+#endif
   }  // end of #pragma omp parallel
 
   free(local_buckets);
