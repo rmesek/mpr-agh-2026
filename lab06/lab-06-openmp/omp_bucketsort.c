@@ -240,18 +240,6 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
     }
 #endif
 
-    // #if PRINT_DEBUG
-    // #pragma omp single
-    //     {
-    //       // print local bucket stats for debugging
-    //       for (int t_id = 0; t_id < num_threads; t_id++) {
-    //         printf("Thread %d local buckets\n", t_id);
-    //         print_buckets_stats(&local_buckets[t_id * num_buckets],
-    //         num_buckets);
-    //       }
-    //     }
-    // #endif
-
 #if PRINT_DEBUG
 #pragma omp single
     {
