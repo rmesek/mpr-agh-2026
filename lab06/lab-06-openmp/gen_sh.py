@@ -3,6 +3,7 @@ from pathlib import Path
 DIR_NAME = "scripts"
 
 PARAMS = {
+    "seed": "$SLURM_ARRAY_TASK_ID",
     "max_threads": list(range(1, 17)),
     "array_size": [1_000, 300_000, 100_000_000],
     "num_buckets": [100, 10_000, 1_000_000],
@@ -20,7 +21,8 @@ HEADER_STR = f"""\
 #SBATCH --job-name=omp_bucketsort
 #SBATCH --output=logs/omp_bucketsort_%A_%a.out
 #SBATCH --nodes=1
-#SBATCH --ntasks={max(PARAMS["max_threads"])}
+#SBATCH --ntasks=1
+#SBATCH --cpus-per-task={max(PARAMS["max_threads"])}
 #SBATCH --time={int(EST_TIME // 3600):02d}:{int((EST_TIME % 3600) // 60):02d}:{int(EST_TIME % 60):02d}
 #SBATCH --partition=plgrid
 #SBATCH --account=plgmpr26-cpu
@@ -37,10 +39,10 @@ gcc -lm -fopenmp omp_bucketsort.c -o $SCRATCH/omp_bucketsort_${SLURM_ARRAY_JOB_I
 
 # OMP_NUM_THREADS=4 $SCRATCH/omp_bucketsort 42 100000000 100
 RUN_LOOP_STR = f"""\
-for max_threads in {PARAMS["max_threads"]}; do
-    for array_size in {PARAMS["array_size"]}; do
-        for num_buckets in {PARAMS["num_buckets"]}; do
-            OMP_NUM_THREADS=$max_threads $SCRATCH/omp_bucketsort_${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}} $array_size $num_buckets > results/omp_bucketsort_${{max_threads}}_${{array_size}}_${{num_buckets}}_${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.out
+for max_threads in {" ".join(map(str, PARAMS["max_threads"]))}; do
+    for array_size in {" ".join(map(str, PARAMS["array_size"]))}; do
+        for num_buckets in {" ".join(map(str, PARAMS["num_buckets"]))}; do
+            OMP_NUM_THREADS=$max_threads $SCRATCH/omp_bucketsort_${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}} {PARAMS["seed"]} $array_size $num_buckets > results/omp_bucketsort_${{max_threads}}_${{array_size}}_${{num_buckets}}_${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}.out
         done
     done
 done
