@@ -158,8 +158,8 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
     int thread_id = omp_get_thread_num();
     bucket_t* local_bucket = &local_buckets[thread_id * num_buckets];
 
-#pragma omp barrier
 #if PRINT_DEBUG
+#pragma omp barrier
 #pragma omp single
     phase_time = omp_get_wtime();
 #endif
@@ -170,8 +170,8 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
                   array_size / num_buckets / num_threads + 10);
     }
 
-#pragma omp barrier
 #if PRINT_DEBUG
+#pragma omp barrier
 #pragma omp single
     {
       printf("bucketsort_v3.init           %f ms\n",
@@ -272,8 +272,8 @@ void bucketsort_v3(uint32_t* array, size_t array_size, size_t num_buckets) {
       bucket_free(&local_bucket[b_idx]);
     }
 
-#pragma omp barrier
 #if PRINT_DEBUG
+#pragma omp barrier
 #pragma omp single
     {
       printf("bucketsort_v3.cleanup        %f ms\n",

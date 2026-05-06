@@ -107,8 +107,8 @@ void bucketsort_v1(uint32_t* array, size_t array_size, size_t num_buckets) {
     // Prywatne kubełki dla danego wątku
     bucket_t* my_buckets = malloc(my_num_buckets * sizeof(bucket_t));
 
-#pragma omp barrier
 #if PRINT_DEBUG
+#pragma omp barrier
 #pragma omp single
     phase_time = omp_get_wtime();
 #endif
@@ -118,8 +118,8 @@ void bucketsort_v1(uint32_t* array, size_t array_size, size_t num_buckets) {
       bucket_init(&my_buckets[i], array_size / num_buckets + 10);
     }
 
-#pragma omp barrier
 #if PRINT_DEBUG
+#pragma omp barrier
 #pragma omp single
     {
       printf("bucketsort_v1.init           %f ms\n",
@@ -141,8 +141,8 @@ void bucketsort_v1(uint32_t* array, size_t array_size, size_t num_buckets) {
       }
     }
 
-#pragma omp barrier
 #if PRINT_DEBUG
+#pragma omp barrier
 #pragma omp single
     {
       printf("bucketsort_v1.distribution   %f ms\n",
@@ -184,8 +184,8 @@ void bucketsort_v1(uint32_t* array, size_t array_size, size_t num_buckets) {
       }
     }
 
-#pragma omp barrier
 #if PRINT_DEBUG
+#pragma omp barrier
 #pragma omp single
     {
       printf("bucketsort_v1.sort           %f ms\n",
@@ -205,8 +205,8 @@ void bucketsort_v1(uint32_t* array, size_t array_size, size_t num_buckets) {
       }
     }
 
-#pragma omp barrier
 #if PRINT_DEBUG
+#pragma omp barrier
 #pragma omp single
     {
       printf("bucketsort_v1.copy_and_merge %f ms\n",
@@ -221,8 +221,8 @@ void bucketsort_v1(uint32_t* array, size_t array_size, size_t num_buckets) {
     }
     free(my_buckets);
 
-#pragma omp barrier
 #if PRINT_DEBUG
+#pragma omp barrier
 #pragma omp single
     {
       printf("bucketsort_v1.cleanup        %f ms\n",
