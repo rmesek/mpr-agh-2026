@@ -1,5 +1,7 @@
 from pathlib import Path
 
+SRC_FILE = "omp_bucketsort.c"
+
 DIR_NAME = "scripts"
 
 PARAMS = {
@@ -29,12 +31,12 @@ HEADER_STR = f"""\
 #SBATCH --array=1-10
 """
 
-SETUP_STR = """\
+SETUP_STR = f"""\
 ml gcc/14.3.0
 
 mkdir -p results logs
 
-gcc -lm -fopenmp omp_bucketsort.c -o $SCRATCH/omp_bucketsort_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}
+gcc -lm -fopenmp {SRC_FILE} -o $SCRATCH/omp_bucketsort_${{SLURM_ARRAY_JOB_ID}}_${{SLURM_ARRAY_TASK_ID}}
 """
 
 # OMP_NUM_THREADS=4 $SCRATCH/omp_bucketsort 42 100000000 100
