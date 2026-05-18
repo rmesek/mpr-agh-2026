@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 ahash = "0.8.12"
+encoding_rs = "0.8.35"
 memmap2 = "0.9.10"
