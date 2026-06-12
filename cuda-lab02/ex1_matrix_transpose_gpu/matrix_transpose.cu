@@ -1,24 +1,24 @@
 #include<stdio.h>
 #include<stdlib.h>
 
-#define N 2048
 #define BLOCK_SIZE 32 
+#define ITERATIONS 20
 
-__global__ void matrix_transpose_naive(int *input, int *output) {
+__global__ void matrix_transpose_naive(int *input, int *output, int N) {
 
 	int indexX = threadIdx.x + blockIdx.x * blockDim.x;
 	int indexY = threadIdx.y + blockIdx.y * blockDim.y;
-	int index = indexY * N + indexX;
-	int transposedIndex = indexX * N + indexY;
+	
+    if (indexX < N && indexY < N) {
+        int index = indexY * N + indexX;
+        int transposedIndex = indexX * N + indexY;
 
-    // this has discoalesced global memory store  
-	output[transposedIndex] = input[index];
-
-	// this has discoalesced global memore load
-	// output[index] = input[transposedIndex];
+        // this has discoalesced global memory store  
+        output[transposedIndex] = input[index];
+    }
 }
 
-__global__ void matrix_transpose_shared(int *input, int *output) {
+__global__ void matrix_transpose_shared(int *input, int *output, int N) {
 
 	__shared__ int sharedMemory [BLOCK_SIZE] [BLOCK_SIZE];
 
@@ -34,76 +34,105 @@ __global__ void matrix_transpose_shared(int *input, int *output) {
 	int localIndexX = threadIdx.x;
 	int localIndexY = threadIdx.y;
 
-	int index = indexY * N + indexX;
-	int transposedIndex = tindexY * N + tindexX;
-
-	// reading from global memory in coalesed manner and performing tanspose in shared memory
-	sharedMemory[localIndexX][localIndexY] = input[index];
+    if (indexX < N && indexY < N) {
+	    int index = indexY * N + indexX;
+	    // reading from global memory in coalesced manner and performing transpose in shared memory
+	    sharedMemory[localIndexX][localIndexY] = input[index];
+    }
 
 	__syncthreads();
 
-	// writing into global memory in coalesed fashion via transposed data in shared memory
-	output[transposedIndex] = sharedMemory[localIndexY][localIndexX];
+    if (tindexX < N && tindexY < N) {
+	    int transposedIndex = tindexY * N + tindexX;
+	    // writing into global memory in coalesced fashion via transposed data in shared memory
+	    output[transposedIndex] = sharedMemory[localIndexY][localIndexX];
+    }
 }
 
-//basically just fills the array with index.
-void fill_array(int *data) {
+// Exercise 1.3: Simple copy kernel for fully coalesced access
+__global__ void matrix_copy_coalesced(int *input, int *output, int N) {
+    int indexX = threadIdx.x + blockIdx.x * blockDim.x;
+	int indexY = threadIdx.y + blockIdx.y * blockDim.y;
+	
+    if (indexX < N && indexY < N) {
+        int index = indexY * N + indexX;
+        // both read and write are fully coalesced
+        output[index] = input[index];
+    }
+}
+
+// basically just fills the array with index.
+void fill_array(int *data, int N) {
 	for(int idx=0;idx<(N*N);idx++)
 		data[idx] = idx;
 }
 
-void print_output(int *a, int *b) {
-	printf("\n Original Matrix::\n");
-	for(int idx=0;idx<(N*N);idx++) {
-		if(idx%N == 0)
-			printf("\n");
-		printf(" %d ",  a[idx]);
-	}
-	printf("\n Transposed Matrix::\n");
-	for(int idx=0;idx<(N*N);idx++) {
-		if(idx%N == 0)
-			printf("\n");
-		printf(" %d ",  b[idx]);
-	}
+// Utility function to measure average kernel execution time
+float measure_time(void (*kernel)(int*, int*, int), int *d_in, int *d_out, int N, dim3 gridSize, dim3 blockSize) {
+    cudaEvent_t start, stop;
+    cudaEventCreate(&start);
+    cudaEventCreate(&stop);
+    float ms = 0, total_ms = 0;
+
+    // Warm-up run
+    kernel<<<gridSize, blockSize>>>(d_in, d_out, N);
+    cudaDeviceSynchronize();
+
+    for (int i = 0; i < ITERATIONS; i++) {
+        cudaEventRecord(start);
+        kernel<<<gridSize, blockSize>>>(d_in, d_out, N);
+        cudaEventRecord(stop);
+        cudaEventSynchronize(stop);
+        cudaEventElapsedTime(&ms, start, stop);
+        total_ms += ms;
+    }
+
+    cudaEventDestroy(start);
+    cudaEventDestroy(stop);
+    return total_ms / ITERATIONS;
 }
+
 int main(void) {
-	int *a, *b;
-        int *d_a, *d_b; // device copies of a, b, c
+    int sizes[] = {1024, 2048, 4096};
+    
+    printf("Execution Times for matrix_transpose.cu (Avg %d iterations)\n", ITERATIONS);
 
-	int size = N * N *sizeof(int);
+    for(int s = 0; s < 3; s++) {
+        int N = sizes[s];
+        int size = N * N * sizeof(int);
+	    int *a, *b;
+        int *d_a, *d_b;
 
-	// Alloc space for host copies of a, b, c and setup input values
-	a = (int *)malloc(size); fill_array(a);
-	b = (int *)malloc(size);
+	    // Alloc space for host copies of a, b and setup input values
+	    a = (int *)malloc(size); fill_array(a, N);
+	    b = (int *)malloc(size);
 
-	// Alloc space for device copies of a, b, c
-	cudaMalloc((void **)&d_a, size);
-	cudaMalloc((void **)&d_b, size);
+	    // Alloc space for device copies
+	    cudaMalloc((void **)&d_a, size);
+	    cudaMalloc((void **)&d_b, size);
 
-	// Copy inputs to device
-	cudaMemcpy(d_a, a, size, cudaMemcpyHostToDevice);
-	cudaMemcpy(d_b, b, size, cudaMemcpyHostToDevice);
+	    // Copy inputs to device
+	    cudaMemcpy(d_a, a, size, cudaMemcpyHostToDevice);
 
-	dim3 blockSize(BLOCK_SIZE,BLOCK_SIZE,1);
-	dim3 gridSize(N/BLOCK_SIZE,N/BLOCK_SIZE,1);
+	    dim3 blockSize(BLOCK_SIZE, BLOCK_SIZE, 1);
+	    dim3 gridSize(N/BLOCK_SIZE, N/BLOCK_SIZE, 1);
 
-	matrix_transpose_naive<<<gridSize,blockSize>>>(d_a,d_b);
-	
-	// Copy result back to host
-	// cudaMemcpy(b, d_b, size, cudaMemcpyDeviceToHost);
-	// print_output(a,b);
+        printf("Matrix Size: %d x %d\n", N, N);
+        
+        float t_naive = measure_time(matrix_transpose_naive, d_a, d_b, N, gridSize, blockSize);
+        printf(" [Ex 1.1] Naive (Global Only)     : %.3f ms\n", t_naive);
 
-	matrix_transpose_shared<<<gridSize,blockSize>>>(d_a,d_b);
+        float t_shared = measure_time(matrix_transpose_shared, d_a, d_b, N, gridSize, blockSize);
+        printf(" [Ex 1.1] Shared (Bank Conflicts) : %.3f ms\n", t_shared);
 
-	// Copy result back to host
-	cudaMemcpy(b, d_b, size, cudaMemcpyDeviceToHost);
-	// print_output(a,b);
+        float t_copy = measure_time(matrix_copy_coalesced, d_a, d_b, N, gridSize, blockSize);
+        printf(" [Ex 1.3] Direct Copy (Coalesced) : %.3f ms\n", t_copy);
+        printf("----------------------------------------------------\n");
 
-	// terminate memories
-	free(a);
-	free(b);
-    cudaFree(d_a);
-	cudaFree(d_b); 
+	    // terminate memories for this iteration
+	    free(a); free(b);
+        cudaFree(d_a); cudaFree(d_b); 
+    }
 
 	return 0;
 }
