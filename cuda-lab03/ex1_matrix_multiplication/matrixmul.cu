@@ -15,13 +15,12 @@ __global__ void matrixMul(float *A, float *B, float *C, int size) {
     }
 }
 
-int main() {
-    int size = 1024; // Example matrix size
+// Function handling execution and memory logic for a specific matrix size
+void runMatrixMulTest(int size) {
     // Allocate host memory
-    float *h_A, *h_B, *h_C;
-    h_A = new float[size * size];
-    h_B = new float[size * size];
-    h_C = new float[size * size];
+    float *h_A = new float[size * size];
+    float *h_B = new float[size * size];
+    float *h_C = new float[size * size];
 
     // Initialize host matrices
     for (int i = 0; i < size * size; ++i) {
@@ -44,25 +43,34 @@ int main() {
     dim3 blockDim(blockSize, blockSize);
     dim3 gridDim((size + blockSize - 1) / blockSize, (size + blockSize - 1) / blockSize);
 
-    // Measure kernel execution time
-    auto start = std::chrono::high_resolution_clock::now();
-    matrixMul<<<gridDim, blockDim>>>(d_A, d_B, d_C, size);
-    cudaDeviceSynchronize(); // Wait for the kernel to finish
-    auto end = std::chrono::high_resolution_clock::now();
+    int numRuns = 20;
+    double totalDuration = 0.0;
 
-    // Calculate duration
-    std::chrono::duration<double> duration = end - start;
+    // Make 20 runs to get the average execution time
+    for (int run = 0; run < numRuns; ++run) {
+        // Measure kernel execution time
+        auto start = std::chrono::high_resolution_clock::now();
+        matrixMul<<<gridDim, blockDim>>>(d_A, d_B, d_C, size);
+        cudaDeviceSynchronize(); // Wait for the kernel to finish
+        auto end = std::chrono::high_resolution_clock::now();
 
-    // Copy result from device to host
-    cudaMemcpy(h_C, d_C, size * size * sizeof(float), cudaMemcpyDeviceToHost);
+        // Calculate duration in milliseconds and add to total
+        std::chrono::duration<double, std::milli> duration = end - start;
+        totalDuration += duration.count();
+    }
 
-    // Verify result (optional, for debugging)
-    // float expected = size * 1.0f * 2.0f;
-    // if (h_C[0] != expected) {
-    //     std::cerr << "Error: " << h_C[0] - expected << std::endl;
-    // }
+    // Calculate average duration
+    double averageDuration = totalDuration / numRuns;
 
-    std::cout << "Kernel execution time: " << duration.count() * 1000 << " ms" << std::endl;
+    // Output using std::cout with built-in formatting methods
+    std::cout.setf(std::ios::fixed, std::ios::floatfield);
+    std::cout.precision(3);
+    
+    std::cout << "Average Execution Time [";
+    std::cout.width(4); 
+    std::cout << size << "x";
+    std::cout.width(4); 
+    std::cout << size << "] over " << numRuns << " runs : " << averageDuration << " ms\n";
 
     // Free device memory
     cudaFree(d_A);
@@ -73,6 +81,17 @@ int main() {
     delete[] h_A;
     delete[] h_B;
     delete[] h_C;
+}
+
+int main() {
+    // Defines three different sizes for matrix multiplication 
+    int testSizes[] = {512, 1024, 2048}; 
+    int numTests = sizeof(testSizes) / sizeof(testSizes[0]);
+
+    // Run matrix multiplication for each size
+    for (int i = 0; i < numTests; ++i) {
+        runMatrixMulTest(testSizes[i]);
+    }
 
     return 0;
 }
